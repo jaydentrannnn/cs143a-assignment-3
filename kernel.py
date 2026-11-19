@@ -1,6 +1,6 @@
 ### Fill in the following information before submitting
-# Group id: 
-# Members: 
+# Group id: 46
+# Members: Jayden Tran,	Alyssa Moua, Lex Ibanez
 
 
 
