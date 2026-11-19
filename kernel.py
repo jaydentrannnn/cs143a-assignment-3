@@ -69,6 +69,7 @@ class Kernel:
         self.rr_ready_queue = deque()
         self.active_queue = FOREGROUND
         self.active_queue_num_ticks = 0
+        self.semaphores = {}  # semaphore id -> {"value": int, "waiting": [PCB, ...]}
 
     # This function is triggered every time a new process has arrived.
     # new_process is this process's PID.
@@ -201,16 +202,51 @@ class Kernel:
     # This method is triggered when the currently running process requests to initialize a new semaphore.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def syscall_init_semaphore(self, semaphore_id: int, initial_value: int):
-        return
+        # Each semaphore has a counter and a list of processes blocked on it
+        self.semaphores[semaphore_id] = {"value": initial_value, "waiting": []}
 
     # This method is triggered when the currently running process calls p() on an existing semaphore.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def syscall_semaphore_p(self, semaphore_id: int) -> PID:
+        sem = self.semaphores[semaphore_id]
+
+        if sem["value"] > 0:
+            # Resource available: take it and keep running
+            sem["value"] -= 1
+        else:
+            # Nothing available: block the running process
+            sem["waiting"].append(self.running)
+            self.running = self.idle_pcb
+            # Let the scheduler pick someone else
+            self.choose_next_process()
+
         return self.running.pid
 
     # This method is triggered when the currently running process calls v() on an existing semaphore.
     # DO NOT rename or delete this method. DO NOT change its arguments.
     def syscall_semaphore_v(self, semaphore_id: int) -> PID:
+        sem = self.semaphores[semaphore_id]
+
+        if len(sem["waiting"]) == 0:
+            # Nobody is waiting, so just add one to the counter
+            sem["value"] += 1
+            return self.running.pid
+
+        # Someone is waiting: pick who gets released
+        if self.scheduling_algorithm == PRIORITY:
+            released = pop_max_priority(sem["waiting"])  # highest priority, ties -> lowest PID
+        else:
+            released = pop_min_pid(sem["waiting"])  # FCFS and RR -> lowest PID
+
+        # Released process starts with a fresh RR quantum
+        released.num_quantum_ticks = 0
+        self.ready_queue.append(released)
+
+        # Only Priority is preemptive, so only Priority re-checks who should run now
+        # (FCFS and RR leave the running process alone)
+        if self.scheduling_algorithm == PRIORITY:
+            self.choose_next_process()
+
         return self.running.pid
 
     # This method is triggered when the currently running process requests to initialize a new mutex.
